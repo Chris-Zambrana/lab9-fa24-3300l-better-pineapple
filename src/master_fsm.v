@@ -1,179 +1,237 @@
 `timescale 1ns / 1ps
 
 module master_fsm(
-		  input	       clk,
-		  input	       prog_sw, 
-		  input	       clr,
-		  input [3:0]  combo_1,
-		  input [3:0]  combo_2,
-		  input [3:0]  combo_3,
-		  input [3:0]  combo_4,
-		  input [3:0]  combo_press,
-		  input	       pressed,
-		  input envdone,
-		  output [3:0] state_out,
-		  output reg note_start,
-		  output reg [7:0] note_out
+		  input		   clk,
+		  input		   reset,
+		  input [7:0]	   item_cost,
+		  input		   select,
+		  input		   q25,
+		  input		   d10,
+		  input		   sending,
+		  output reg [2:0] fsm_state,
+		  output reg [7:0] amount
 		  );
 
-   localparam		       IDLE = 0;
-   localparam		       ONE_CORRECT = 1;
-   localparam		       TWO_CORRECT = 2;
-   localparam		       THREE_CORRECT = 3;
-   localparam		       FOUR_CORRECT = 4;
-   localparam		       ONE_WRONG = 5;
-   localparam		       TWO_WRONG = 6;
-   localparam		       THREE_WRONG = 7;
-   localparam		       FOUR_WRONG = 8;
-   localparam		       PROGRAM_MODE = 9;
-   localparam		       ONE_SET = 10;
-   localparam		       TWO_SET = 11;
-   localparam		       THREE_SET = 12;
-   localparam		       FOUR_SET = 13;
-   localparam              PLAY = 14;
-   localparam              PLAY_END = 15;
+   localparam		       WAITSELECTION = 0;
+   localparam		       WAITPAYMENT = 1;
+   localparam		       GOTQUARTER = 2;
+   localparam		       GOTDIME = 3;
+   localparam		       DISPENSING = 4;
+   localparam		       CHANGERETURN = 5;
 
-   reg [3:0]		       state = IDLE;
-   reg [3:0]		       next_state;
+   reg [2:0]		       next_state;
+   reg [7:0]		       new_amount;
 
-   assign state_out = state;
-   
-   always @(posedge clk)
-     begin
-	state <= next_state;
-	if (state == FOUR_WRONG)
-	note_out <="G";
-	else if (state == FOUR_CORRECT) 
-	note_out <= "A";
+   always @(posedge clk or posedge reset)
+     if (reset) begin
+	fsm_state <= WAITSELECTION;
+	amount <= 0;
+     end else begin
+	fsm_state <= next_state;
+	amount <= new_amount;
      end
 
    always @(*)
      begin
-	next_state = state;
 
-	case (state)
-	  IDLE:
-	    if (prog_sw) begin
-	       next_state = PROGRAM_MODE;
-	    end else if (pressed) begin
-	       if (combo_press == combo_1)
-		 next_state = ONE_CORRECT;
-	       else
-		 next_state = ONE_WRONG;
-	    end
+   new_amount = amount;
+   next_state = fsm_state;
+	case (fsm_state)
 
-	  PROGRAM_MODE:
-	    if (~prog_sw) begin
-	       next_state = IDLE;
-	    end else if (pressed) begin
-	       next_state = ONE_SET;
-	    end
-	    
-	  ONE_SET:
-	    if (clr) begin
-	       next_state = IDLE;
-	    end else if (pressed) begin
-	       next_state = TWO_SET;
-	    end
-	    
-	    TWO_SET:
-	    if (clr) begin
-	       next_state = IDLE;
-	    end else if (pressed) begin
-	       next_state = THREE_SET;
-	    end
-	    
-	    THREE_SET:
-	    if (clr) begin
-	       next_state = IDLE;
-	    end else if (pressed) begin
-	       next_state = FOUR_SET;
-	    end
-	    
-	    FOUR_SET:
-	    if (clr) begin
-	       next_state = IDLE;
-	    end
-	    
-	    ONE_CORRECT:
-	    if (clr) begin
-	       next_state = IDLE;
-	    end else if (pressed) begin
-	       if (combo_press == combo_2)
-		 next_state = TWO_CORRECT;
-	       else
-		 next_state = TWO_WRONG;
-	    end
-	    
-	    TWO_CORRECT:
-	    if (clr) begin
-	       next_state = IDLE;
-	    end else if (pressed) begin
-	       if (combo_press == combo_3)
-		 next_state = THREE_CORRECT;
-	       else
-		 next_state = THREE_WRONG;
-	    end
-	    
-	    THREE_CORRECT:
-	    if (clr) begin
-	       next_state = IDLE;
-	    end else if (pressed) begin
-	       if (combo_press == combo_4)
-		 next_state = FOUR_CORRECT;
-	       else
-		 next_state = FOUR_WRONG;
-	    end
-	    
-	    FOUR_CORRECT:
+    WAITSELECTION: begin
+            new_amount = item_cost;
+            if (select) 
+            begin
+                next_state = WAITPAYMENT;
+            end
+        else 
+            begin
+                next_state = WAITSELECTION;
+            end
+                
+    end
+
+    WAITPAYMENT: 
+    begin
+            if (q25) begin
+                next_state = GOTQUARTER;
+            end else if (d10) begin
+                next_state = GOTDIME;
+            end
+            else begin
+                next_state = WAITPAYMENT;
+            end
+    end
+    
+    GOTQUARTER:
+    begin
+
+        if (amount > 25)
+                begin
+                    new_amount = amount - 25;
+                    next_state = WAITPAYMENT;
+                end
+        else
         begin
-           note_start = 1;
-	       next_state=PLAY;
-	    end
-	    
-	  ONE_WRONG:
-	    if (clr) begin
-	       next_state = IDLE;
-	    end else if (pressed) begin
-	       next_state = TWO_WRONG;
-	    end
-	    
-	  TWO_WRONG:
-	    if (clr) begin
-	       next_state = IDLE;
-	    end else if (pressed) begin
-	       next_state = THREE_WRONG;
-	    end
+        new_amount = 25 - amount;
+        next_state = DISPENSING;
+        end
+    end
+    
+    GOTDIME: 
+    begin
 
-	  THREE_WRONG:
-	    if (clr) begin
-	       next_state = IDLE;
-	    end else if (pressed) begin
-	       next_state = FOUR_WRONG;
-	    end
-	    
-	  FOUR_WRONG:
-	  begin
-           note_start = 1;
-	       next_state=PLAY;
-	  end
+         if (amount > 10)
+                begin
+                    new_amount = amount - 10;
+                    next_state = WAITPAYMENT;
+                end
 
-	  PLAY:
-	  if(envdone) begin
-	  note_start = 0;
-	  next_state = PLAY_END;
-	  end
-	  
-	  PLAY_END:
-	    if (clr) begin
-	       next_state = IDLE;
-	    end
-	    
-	  default:
-	      next_state = IDLE;
-	      
-	endcase
+                else 
+                begin
+                new_amount = 10 - amount;
+                next_state = DISPENSING;
+                end
+    end
+    
+    DISPENSING: begin
+            if (new_amount > 0)
+            begin
+               if (!sending) 
+                next_state = CHANGERETURN;
+               else 
+                next_state = DISPENSING;
+            end
+            else
+            begin
+                next_state = WAITSELECTION;
+            end
+    end
+    
+    CHANGERETURN: begin
+           if (!sending) 
+                next_state = WAITSELECTION;
+               else 
+                next_state = CHANGERETURN;
+    end
+    
+    default: 
+        begin
+            next_state = WAITSELECTION;
+        end
+    
+	endcase // case (fsm_state)
      end
-
 endmodule
+
+//`timescale 1ns / 1ps
+
+//module master_fsm(
+//		  input		   clk,
+//		  input		   reset,
+//		  input [7:0]	   item_cost,
+//		  input		   select,
+//		  input		   q25,
+//		  input		   d10,
+//		  input		   sending,
+//		  output reg [2:0] fsm_state,
+//		  output reg [7:0] amount
+//		  );
+
+//   localparam		       WAITSELECTION = 0;
+//   localparam		       WAITPAYMENT = 1;
+//   localparam		       GOTQUARTER = 2;
+//   localparam		       GOTDIME = 3;
+//   localparam		       DISPENSING = 4;
+//   localparam		       CHANGERETURN = 5;
+
+//   reg [2:0]		       next_state;
+//   reg [7:0]		       new_amount;
+
+//   always @(posedge clk or posedge reset)
+//     if (reset) begin
+//	fsm_state <= WAITSELECTION;
+//	amount <= 0;
+//     end else begin
+//	fsm_state <= next_state;
+//	amount <= new_amount;
+//     end
+
+//   always @(*)
+//     begin
+
+//   new_amount = amount;
+//   next_state = fsm_state;
+//	case (fsm_state)
+
+//    WAITSELECTION: begin
+//            new_amount = item_cost;
+//            if (select) 
+//            begin
+//                next_state = WAITPAYMENT;
+//            end
+//        else 
+//            begin
+//                next_state = WAITSELECTION;
+//            end
+                
+//    end
+
+//    WAITPAYMENT: 
+//    begin
+//            if (q25) begin
+//                next_state = GOTQUARTER;
+//            end else if (d10) begin
+//                next_state = GOTDIME;
+//            end
+//            else begin
+//                next_state = WAITPAYMENT;
+//            end
+//    end
+    
+//    GOTQUARTER:
+//    begin
+
+//        new_amount = amount - 25;
+//        if (new_amount <= 0) begin
+//            next_state = DISPENSING;
+//        end else begin
+//            next_state = WAITPAYMENT;
+//        end
+//    end
+    
+//    GOTDIME: 
+//    begin
+
+//            new_amount = amount - 10;
+//            if (new_amount <= 0) begin
+//                next_state = DISPENSING;
+//            end else begin
+//                next_state = WAITPAYMENT;
+//        end
+        
+//    end
+    
+//    DISPENSING: begin
+//        if (new_amount < 0) begin
+//            next_state = CHANGERETURN;
+//        end else begin
+//            next_state = WAITSELECTION;
+//            new_amount = 0;
+//        end
+//    end
+    
+//    CHANGERETURN: begin
+//        new_amount = -new_amount;
+//        next_state = WAITSELECTION;
+//    end
+    
+//    default: 
+//        begin
+//            next_state = WAITSELECTION;
+//        end
+    
+//	endcase // case (fsm_state)
+//     end
+//endmodule
    
